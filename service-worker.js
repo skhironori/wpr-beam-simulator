@@ -1,9 +1,14 @@
 // WPR-47417 帯広 ビーム走査ジオメトリ・シミュレーター
-// 最小構成のService Worker：アプリ本体（HTML/manifest/アイコン）だけをキャッシュし、
+// 最小構成のService Worker：アプリ本体（HTML/manifest/アイコン）だけをキャッシュ対象とし、
 // 気象庁データ・地図タイル・CDNライブラリなど外部オリジンへのリクエストは
 // 常にそのままネットワークへ通す（キャッシュしない＝常に最新を取得する）。
+//
+// キャッシュ戦略はネットワーク優先（network-first）。以前はキャッシュ優先だったため、
+// 一度読み込んだ端末はそれ以降ずっと同じ内容が表示され続け、更新に気付けなかった。
+// 今回からは毎回まずネットワークから最新を取りにいき、取得できた分だけキャッシュを
+// 上書きする。オフライン時や通信エラー時のみキャッシュにフォールバックする。
 
-var CACHE_NAME = 'wpr-obihiro-shell-v1';
+var CACHE_NAME = 'wpr-obihiro-shell-v2';
 var APP_SHELL = [
   './',
   './index.html',
@@ -46,16 +51,15 @@ self.addEventListener('fetch', function (event) {
   if (event.request.method !== 'GET') return;
 
   event.respondWith(
-    caches.match(event.request).then(function (cached) {
-      if (cached) return cached;
-      return fetch(event.request).then(function (response) {
-        // 取得できたら次回用にキャッシュを更新しておく
-        var copy = response.clone();
-        caches.open(CACHE_NAME).then(function (cache) { cache.put(event.request, copy); });
-        return response;
-      });
+    fetch(event.request, { cache: 'no-store' }).then(function (response) {
+      var copy = response.clone();
+      caches.open(CACHE_NAME).then(function (cache) { cache.put(event.request, copy); });
+      return response;
     }).catch(function () {
-      return caches.match('./index.html');
+      // オフライン・通信エラー時のみキャッシュへフォールバック
+      return caches.match(event.request).then(function (cached) {
+        return cached || caches.match('./index.html');
+      });
     })
   );
 });
