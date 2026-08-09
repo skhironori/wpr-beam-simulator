@@ -292,6 +292,15 @@
   }
   #mapOverlayControls .field-label{ color:#c8d0dd; }
   #mapOverlayControls .view-btn{ white-space:nowrap; }
+  #mapTapTooltip{
+    position:absolute; display:none; pointer-events:none; z-index:1300;
+    transform:translate(-50%, -130%);
+    background:rgba(10,14,26,0.95); border:1px solid var(--panel-border);
+    border-radius:4px; padding:5px 9px;
+    font-family:var(--font-mono); font-size:var(--fs-caption); color:var(--text);
+    white-space:normal; max-width:230px; text-align:center;
+    box-shadow:0 2px 8px rgba(0,0,0,0.5);
+  }
   #jmaChartPanel{
     flex:1 1 0%; min-height:200px; box-sizing:border-box;
     padding:10px 12px; display:flex; flex-direction:column;
@@ -698,6 +707,7 @@
     maxAltitude: 5000,
     blindZoneAltitude: 200,
     mapAltitude: 1000,
+    mapAltitudeMax: 5000, // 「選択高度」スライダーの上限。取得データの実際の最高高度に応じて動的に更新する
     mapWindStyle: 'fixed' // 'fixed'=矢印表示（固定方位）／ 'ring'=リング表示（彩色）
   };
 
@@ -1040,6 +1050,7 @@
     leafletMap.on('tileerror', function (e) {
       console.warn('タイル読み込み失敗:', e && e.tile && e.tile.src);
     });
+    leafletMap.on('movestart zoomstart', hideMapTapTooltip);
 
     var antennaIcon = L.divIcon({ className: 'antenna-icon', html: '▲', iconSize: [18, 18], iconAnchor: [9, 9] });
     mapMarkers.antenna = L.marker([STATION.latDec, STATION.lonDec], { icon: antennaIcon }).addTo(leafletMap)
@@ -1048,9 +1059,8 @@
     [1000, 2000, 3000].forEach(function (r) {
       var c = L.circle([STATION.latDec, STATION.lonDec], {
         radius: r, color: '#5eead4', weight: 1.8, fill: false, dashArray: '5,6', opacity: 0.8
-      }).addTo(leafletMap)
-        .bindTooltip('水平距離の目安：' + (r / 1000).toFixed(0) + 'km（アンテナからの距離。高度とは無関係）');
-      bindTapTooltip(c);
+      }).addTo(leafletMap);
+      bindTapTooltip(c, '水平距離の目安：' + (r / 1000).toFixed(0) + 'km（アンテナからの距離。高度とは無関係）');
       mapMarkers.rings.push(c);
     });
 
@@ -1074,15 +1084,46 @@
     updateMapWindArrow();
   }
 
-  // Leafletのツールチップは既定でmouseover/mouseoutにのみ反応し、タッチ環境では開かない。
-  // タップでも開閉できるよう、bindTooltip済みのレイヤーにクリックトグルを追加する。
-  function bindTapTooltip(layer) {
-    var hideTimer = null;
+  // 地図用の共有タップツールチップ。Leaflet組み込みのper-layerツールチップ機構には
+  // 依存しない：重なり合う複数レイヤーが同時にクリックイベントを発火しても、
+  // 表示するDOM要素は1つだけなので競合（一瞬出てすぐ消える等）が起きない。
+  var mapTapTooltipEl = null;
+  var mapTapTooltipHideTimer = null;
+
+  function getMapTapTooltipEl() {
+    if (!mapTapTooltipEl) {
+      var pane = document.getElementById('mapPane');
+      mapTapTooltipEl = document.createElement('div');
+      mapTapTooltipEl.id = 'mapTapTooltip';
+      pane.appendChild(mapTapTooltipEl);
+    }
+    return mapTapTooltipEl;
+  }
+
+  function showMapTapTooltip(latlng) {
+    if (!leafletMap) return;
+    var el = getMapTapTooltipEl();
+    var pt = leafletMap.latLngToContainerPoint(latlng);
+    el.style.left = pt.x + 'px';
+    el.style.top = pt.y + 'px';
+    el.style.display = 'block';
+    if (mapTapTooltipHideTimer) clearTimeout(mapTapTooltipHideTimer);
+    mapTapTooltipHideTimer = setTimeout(hideMapTapTooltip, 3000);
+  }
+
+  function hideMapTapTooltip() {
+    if (mapTapTooltipEl) mapTapTooltipEl.style.display = 'none';
+  }
+
+  // レイヤーをクリック／タップしたときに、その位置へ指定テキストのツールチップを出す。
+  function bindTapTooltip(layer, text) {
     layer.on('click', function (e) {
-      layer.openTooltip();
-      if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(function () { layer.closeTooltip(); }, 3000);
-      if (e && e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
+      getMapTapTooltipEl().textContent = text;
+      showMapTapTooltip(e.latlng);
+      if (e && e.originalEvent) {
+        L.DomEvent.stopPropagation(e.originalEvent);
+        if (e.originalEvent.stopImmediatePropagation) e.originalEvent.stopImmediatePropagation();
+      }
     });
     return layer;
   }
@@ -1139,9 +1180,8 @@
     var color = anyBlocked ? '#ff5566' : '#4ade80';
     mapMarkers.obstruction = L.circleMarker(pos, {
       radius: 8, color: color, fillColor: color, fillOpacity: 0.9, weight: 2
-    }).addTo(leafletMap)
-      .bindTooltip('障害物：高さ' + obstruction.height + 'm / 距離' + obstruction.distance + 'm');
-    bindTapTooltip(mapMarkers.obstruction);
+    }).addTo(leafletMap);
+    bindTapTooltip(mapMarkers.obstruction, '障害物：高さ' + obstruction.height + 'm / 距離' + obstruction.distance + 'm');
   }
 
   // 選択時刻のプロファイル配列を返す（未選択・データなしの場合は空配列）
@@ -1184,8 +1224,8 @@
       var circle = L.circle([STATION.latDec, STATION.lonDec], {
         radius: r, color: '#ffb300', weight: 1.5, dashArray: '6,6',
         fillColor: '#ffb300', fillOpacity: 0.06, opacity: 0.75
-      }).bindTooltip('高度ドリフト円：半径約' + Math.round(r) + 'm（高度' + (alt / 1000).toFixed(1) + 'km。水平距離の目安リングとは別物）');
-      bindTapTooltip(circle);
+      });
+      bindTapTooltip(circle, '高度ドリフト円：半径約' + Math.round(r) + 'm（高度' + (alt / 1000).toFixed(1) + 'km。水平距離の目安リングとは別物）');
       windLayerGroup.addLayer(circle);
     }
 
@@ -1203,11 +1243,15 @@
     profile.forEach(function (p) {
       var r = repRadiusFor(p.height);
       if (r <= 0) return;
+      var isSelected = (p === selectedPoint);
+      // リング表示は選択高度の1本だけを描く。全高度分を常に重ねると、選択高度を
+      // 動かしても反応しないリングが「固定されている」ように見えて紛らわしいため。
+      if (settings.mapWindStyle === 'ring' && !isSelected) return;
+
       var spd = Math.sqrt(p.u * p.u + p.v * p.v);
       var dirFrom = windDirFrom(p.u, p.v);
       var dirTo = (dirFrom + 180) % 360;
       var col = jmaSpeedColor(spd);
-      var isSelected = (p === selectedPoint);
       var tooltipText = compassLabel16(dirFrom) + '　' + spd.toFixed(1) + 'm/s／高度' + Math.round(p.height) + 'm';
 
       if (settings.mapWindStyle === 'ring') {
@@ -1224,8 +1268,7 @@
           iconSize: [16, 16], iconAnchor: [8, 8]
         });
         var tickMarker = L.marker(tickPos, { icon: tickIcon, interactive: true });
-        tickMarker.bindTooltip(tooltipText);
-        bindTapTooltip(tickMarker);
+        bindTapTooltip(tickMarker, tooltipText);
         windLayerGroup.addLayer(tickMarker);
       } else {
         // 矢印表示：リングは目印のみ（破線）、矢印は基準方位（北東）に固定し、向きだけ実風向に回転させる。
@@ -1248,8 +1291,7 @@
           '</svg></div></div>' + labelHtml + '</div>';
         var arrowIcon = L.divIcon({ className: 'ring-arrow-icon', html: arrowHtml, iconSize: [70, 66], iconAnchor: [35, 20] });
         var arrowMarker = L.marker(arrowPos, { icon: arrowIcon, interactive: true });
-        arrowMarker.bindTooltip(tooltipText);
-        bindTapTooltip(arrowMarker);
+        bindTapTooltip(arrowMarker, tooltipText);
         windLayerGroup.addLayer(arrowMarker);
       }
     });
@@ -1289,7 +1331,7 @@
 
   // 選択高度を設定し、関連する表示（マーカー・矢印・高度ドリフト円・スライダー）を同期する
   function setMapAltitude(h) {
-    h = Math.max(0, Math.min(settings.maxAltitude, h));
+    h = Math.max(0, Math.min(settings.mapAltitudeMax, h));
     settings.mapAltitude = h;
     var slider = document.getElementById('mapAltSlider');
     var label = document.getElementById('mapAltValue');
@@ -1330,6 +1372,8 @@
         jmaData.selectedTime = keys[keys.length - 1];
         jmaData.fetchedAt = new Date();
         jmaData.loading = false;
+
+        updateMapAltitudeRange();
 
         jmaData.windowPosHours = jmaMaxOffset(); // デフォルトは最新（直近3時間）
         updateJmaWindowLabel();
@@ -1427,6 +1471,27 @@
     var t0 = parseJmaTimeUTCToDate(jmaData.series[0].time).getTime();
     var t1 = parseJmaTimeUTCToDate(jmaData.series[jmaData.series.length - 1].time).getTime();
     return (t1 - t0) / 3600000;
+  }
+
+  // 取得できた全時刻・全高度の中での実際の最高高度（m）。
+  // 「選択高度」スライダーの上限をこれに合わせることで、実データにある高度が
+  // ビーム表示用の設定（最大表示高度）によって見えなくなることを防ぐ。
+  function jmaOverallMaxHeight() {
+    var maxH = 0;
+    jmaData.series.forEach(function (s) {
+      s.profile.forEach(function (p) { if (p.height > maxH) maxH = p.height; });
+    });
+    return maxH;
+  }
+
+  // 選択高度スライダーの上限を、実データの最高高度に合わせて更新する
+  function updateMapAltitudeRange() {
+    var overallMaxH = jmaOverallMaxHeight();
+    var newMax = Math.max(1000, Math.ceil(overallMaxH / 500) * 500);
+    settings.mapAltitudeMax = newMax;
+    var slider = document.getElementById('mapAltSlider');
+    if (slider) slider.max = newMax;
+    if (settings.mapAltitude > newMax) setMapAltitude(newMax);
   }
 
   // 表示範囲スライダーが取りうる最大値（=window位置0..maxOffsetの範囲）
@@ -1970,16 +2035,8 @@
     altSlider.addEventListener('input', function () {
       settings.maxAltitude = parseInt(altSlider.value, 10);
       altValue.textContent = (settings.maxAltitude / 1000).toFixed(1) + ' km';
-      var mapAltSlider = document.getElementById('mapAltSlider');
-      if (mapAltSlider) {
-        mapAltSlider.max = settings.maxAltitude;
-        if (settings.mapAltitude > settings.maxAltitude) {
-          setMapAltitude(settings.maxAltitude);
-        } else {
-          updateMapAltMarkers();
-          renderJmaChart();
-        }
-      }
+      updateMapAltMarkers();
+      renderJmaChart();
       buildBeams();
     });
 
