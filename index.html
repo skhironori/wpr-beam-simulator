@@ -15,6 +15,9 @@
 <meta name="apple-mobile-web-app-title" content="WPR帯広">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" href="./icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
   :root{
@@ -31,6 +34,7 @@
     --wind:#f472b6;
     --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Consolas, "Courier New", monospace;
     --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+    --font-numeric: 'Inter', ui-monospace, "SF Mono", "Roboto Mono", monospace;
     /* タイポグラフィスケール（Material Design 3 の Label/Body/Title ロールに準拠）。
        密度の高いデータ画面のため下限は11px（Label Small相当）を厳守し、
        半端なpx値（9.5px/10.5px/11.5px等）による不揃いを解消する。 */
@@ -198,7 +202,7 @@
     font-size:var(--fs-caption); color:var(--text-dim); margin-bottom:5px;
     display:flex; justify-content:space-between; align-items:baseline;
   }
-  .field-label span.val{ color:var(--cyan); font-family:var(--font-mono); font-size:var(--fs-body); font-weight:700; font-variant-numeric:tabular-nums; }
+  .field-label span.val{ color:var(--cyan); font-family:var(--font-numeric); font-size:var(--fs-body); font-weight:700; font-variant-numeric:tabular-nums; }
   input[type=range]{
     width:100%; accent-color:var(--amber);
   }
@@ -242,7 +246,7 @@
   .res-blocked{ background:rgba(255,85,102,0.12); color:var(--red); }
   .res-neutral{ background:rgba(139,150,172,0.08); color:var(--text-dim); }
 
-  .jma-table{ width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:var(--fs-body); font-variant-numeric:tabular-nums; }
+  .jma-table{ width:100%; border-collapse:collapse; font-family:var(--font-numeric); font-size:var(--fs-body); font-variant-numeric:tabular-nums; }
   .jma-table th, .jma-table td{ padding:6px 5px; text-align:right; border-bottom:1px solid var(--panel-border); }
   .jma-table td{ font-weight:600; letter-spacing:0.02em; }
   .jma-table th{ color:var(--text-dim); font-weight:400; font-size:var(--fs-caption); }
@@ -300,7 +304,7 @@
     transform:translate(-50%, -130%);
     background:rgba(10,14,26,0.95); border:1px solid var(--panel-border);
     border-radius:4px; padding:5px 9px;
-    font-family:var(--font-mono); font-size:var(--fs-caption); color:var(--text);
+    font-family:var(--font-numeric); font-size:var(--fs-caption); color:var(--text);
     white-space:normal; max-width:230px; text-align:center;
     box-shadow:0 2px 8px rgba(0,0,0,0.5);
   }
@@ -329,7 +333,7 @@
     position:absolute; display:none; pointer-events:none; z-index:5;
     background:rgba(10,14,26,0.94); border:1px solid var(--wind);
     border-radius:4px; padding:5px 8px;
-    font-family:var(--font-mono); font-size:var(--fs-caption); color:var(--text);
+    font-family:var(--font-numeric); font-size:var(--fs-caption); color:var(--text);
     line-height:1.5; white-space:nowrap;
   }
   #jmaTableWrap{ flex:1; min-height:0; overflow-y:auto; }
@@ -352,14 +356,14 @@
     box-shadow:0 0 7px rgba(255,179,0,0.85), 0 0 0 2px rgba(255,255,255,0.6);
   }
   .ring-value-label{
-    font-family:var(--font-mono); font-size:var(--fs-caption); font-weight:700; color:#fff;
+    font-family:var(--font-numeric); font-size:var(--fs-caption); font-weight:700; color:#fff;
     background:rgba(10,14,26,0.88); border:1px solid var(--panel-border); border-radius:3px;
-    padding:2px 6px; white-space:nowrap; margin-top:3px;
+    padding:2px 6px; white-space:nowrap; margin-top:3px; font-variant-numeric:tabular-nums;
   }
   .alt-label-frame{
-    font-family:var(--font-mono); font-size:var(--fs-caption); font-weight:700; color:var(--amber);
+    font-family:var(--font-numeric); font-size:var(--fs-caption); font-weight:700; color:var(--amber);
     background:rgba(10,14,26,0.85); border:2px solid var(--amber); border-radius:2px;
-    padding:2px 7px; white-space:nowrap; text-align:center;
+    padding:2px 7px; white-space:nowrap; text-align:center; font-variant-numeric:tabular-nums;
     box-shadow:0 0 4px rgba(255,179,0,0.4);
   }
   .antenna-icon{
@@ -1064,7 +1068,8 @@
     leafletMap.on('tileerror', function (e) {
       console.warn('タイル読み込み失敗:', e && e.tile && e.tile.src);
     });
-    leafletMap.on('movestart zoomstart', hideMapTapTooltip);
+    leafletMap.on('move zoom', repositionMapTapTooltip);
+    leafletMap.on('click', hideMapTapTooltip);
 
     var antennaIcon = L.divIcon({ className: 'antenna-icon', html: '▲', iconSize: [18, 18], iconAnchor: [9, 9] });
     mapMarkers.antenna = L.marker([STATION.latDec, STATION.lonDec], { icon: antennaIcon }).addTo(leafletMap)
@@ -1073,7 +1078,7 @@
     distanceRingLayerGroup = L.layerGroup().addTo(leafletMap);
     [1000, 2000, 3000, 4000, 5000].forEach(function (r) {
       var c = L.circle([STATION.latDec, STATION.lonDec], {
-        radius: r, color: '#5eead4', weight: 2.5, fill: false, dashArray: '6,5', opacity: 1
+        radius: r, color: '#5eead4', weight: 1.6, fill: false, dashArray: '6,5', opacity: 0.55
       });
       bindTapTooltip(c, '水平距離の目安：' + (r / 1000).toFixed(0) + 'km（アンテナからの距離。高度とは無関係）');
       distanceRingLayerGroup.addLayer(c);
@@ -1103,8 +1108,9 @@
   // 地図用の共有タップツールチップ。Leaflet組み込みのper-layerツールチップ機構には
   // 依存しない：重なり合う複数レイヤーが同時にクリックイベントを発火しても、
   // 表示するDOM要素は1つだけなので競合（一瞬出てすぐ消える等）が起きない。
+  // 自動では閉じず、地図の何もない場所をタップ／クリックするまで表示し続ける。
   var mapTapTooltipEl = null;
-  var mapTapTooltipHideTimer = null;
+  var mapTapTooltipLatLng = null;
 
   function getMapTapTooltipEl() {
     if (!mapTapTooltipEl) {
@@ -1116,18 +1122,24 @@
     return mapTapTooltipEl;
   }
 
+  // 地図の移動・ズームに追従して表示位置を再計算する（開いたまま位置だけ更新）
+  function repositionMapTapTooltip() {
+    if (!leafletMap || !mapTapTooltipEl || !mapTapTooltipLatLng) return;
+    if (mapTapTooltipEl.style.display === 'none') return;
+    var pt = leafletMap.latLngToContainerPoint(mapTapTooltipLatLng);
+    mapTapTooltipEl.style.left = pt.x + 'px';
+    mapTapTooltipEl.style.top = pt.y + 'px';
+  }
+
   function showMapTapTooltip(latlng) {
     if (!leafletMap) return;
-    var el = getMapTapTooltipEl();
-    var pt = leafletMap.latLngToContainerPoint(latlng);
-    el.style.left = pt.x + 'px';
-    el.style.top = pt.y + 'px';
-    el.style.display = 'block';
-    if (mapTapTooltipHideTimer) clearTimeout(mapTapTooltipHideTimer);
-    mapTapTooltipHideTimer = setTimeout(hideMapTapTooltip, 3000);
+    mapTapTooltipLatLng = latlng;
+    getMapTapTooltipEl().style.display = 'block';
+    repositionMapTapTooltip();
   }
 
   function hideMapTapTooltip() {
+    mapTapTooltipLatLng = null;
     if (mapTapTooltipEl) mapTapTooltipEl.style.display = 'none';
   }
 
@@ -1703,7 +1715,7 @@
 
     ctx.strokeStyle = '#1e2b45';
     ctx.fillStyle = '#8b96ac';
-    ctx.font = '11px monospace';
+    ctx.font = "11px 'Inter', monospace";
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     var hTick = maxH <= 6000 ? 1000 : 2000;
@@ -2136,8 +2148,6 @@
       selectJmaTime(jmaChartMeta.series[idx].time);
     });
 
-    var chartTooltipHideTimer = null;
-
     function showChartTooltipAt(mx, my) {
       var tip = document.getElementById('jmaChartTooltip');
       var pt = findNearestChartPoint(mx, my, 9);
@@ -2171,14 +2181,17 @@
 
     document.getElementById('jmaChartCanvas').addEventListener('mouseleave', hideChartTooltip);
 
-    // タッチ環境向け：mousemove/mouseleaveが発火しないため、タップ位置で同じツールチップを出し、
-    // 触れっぱなしでも邪魔にならないよう数秒後に自動で閉じる。
+    // タッチ環境向け：mousemove/mouseleaveが発火しないため、タップ位置で同じツールチップを出す。
+    // 自動では閉じず、キャンバスの外をタップするまで表示し続ける。
     document.getElementById('jmaChartCanvas').addEventListener('touchstart', function (e) {
       if (e.touches.length !== 1) return;
       var rect = this.getBoundingClientRect();
       showChartTooltipAt(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top);
-      if (chartTooltipHideTimer) clearTimeout(chartTooltipHideTimer);
-      chartTooltipHideTimer = setTimeout(hideChartTooltip, 3000);
+    }, { passive: true });
+
+    document.addEventListener('touchstart', function (e) {
+      var canvas = document.getElementById('jmaChartCanvas');
+      if (canvas && !canvas.contains(e.target)) hideChartTooltip();
     }, { passive: true });
 
     setupRangeDrag();
