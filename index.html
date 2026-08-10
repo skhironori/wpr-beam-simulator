@@ -356,6 +356,12 @@
     background:rgba(10,14,26,0.88); border:1px solid var(--panel-border); border-radius:3px;
     padding:2px 6px; white-space:nowrap; margin-top:3px;
   }
+  .alt-label-frame{
+    font-family:var(--font-mono); font-size:var(--fs-caption); font-weight:700; color:var(--amber);
+    background:rgba(10,14,26,0.85); border:2px solid var(--amber); border-radius:2px;
+    padding:2px 7px; white-space:nowrap; text-align:center;
+    box-shadow:0 0 4px rgba(255,179,0,0.4);
+  }
   .antenna-icon{
     color:var(--text); font-size:var(--fs-emphasis); line-height:1;
     text-shadow:0 0 4px #000, 0 0 4px #000; text-align:center;
@@ -476,7 +482,11 @@
         </div>
         <div class="toggle-row" style="margin-bottom:8px;">
           <input type="checkbox" id="toggleWindMap" checked>
-          <label for="toggleWindMap">風況ベクトル・高度ドリフト円を表示（表示方式・選択高度は地図上のパネルから操作できます）</label>
+          <label for="toggleWindMap">風況ベクトル・選択高度（ビーム領域）を表示（表示方式・選択高度は地図上のパネルから操作できます）</label>
+        </div>
+        <div class="toggle-row" style="margin-bottom:8px;">
+          <input type="checkbox" id="toggleDistanceRingsMap" checked>
+          <label for="toggleDistanceRingsMap">水平距離の目安リング（1/2/3km）を表示</label>
         </div>
       </div>
 
@@ -525,7 +535,8 @@
           <div><span class="sw" style="background:var(--amber);"></span>斜めビーム（北東南西）</div>
           <div><span class="sw" style="background:var(--red);"></span>障害物による遮蔽区間</div>
           <div><span class="sw" style="background:var(--wind);"></span>気象庁実況風ベクトル</div>
-          <div><span class="sw" style="background:var(--amber);border:1px dashed #0a0e1a;"></span>高度ドリフト円（選択高度・破線円）</div>
+          <div><span class="sw" style="background:var(--amber);border:1px dashed #0a0e1a;"></span>選択高度（ビーム領域・破線円）</div>
+          <div><span class="sw" style="background:var(--cyan);border:1px dashed #0a0e1a;"></span>水平距離の目安リング（1/2/3km）</div>
         </div>
       </div>
 
@@ -1023,7 +1034,7 @@
   // ------------------------------------------------------------------
   var leafletMap = null;
   var mapMarkers = { antenna: null, rings: [], beams: {}, obstruction: null };
-  var beamLayerGroup, windLayerGroup;
+  var beamLayerGroup, windLayerGroup, distanceRingLayerGroup;
 
   function initMap() {
     if (leafletMap) return;
@@ -1059,11 +1070,13 @@
     mapMarkers.antenna = L.marker([STATION.latDec, STATION.lonDec], { icon: antennaIcon }).addTo(leafletMap)
       .bindPopup(STATION.name + '（' + STATION.id + '）<br>' + STATION.lat + ' ' + STATION.lon + '<br>アンテナ標高 ' + STATION.elevation + ' m');
 
-    [1000, 2000, 3000].forEach(function (r) {
+    distanceRingLayerGroup = L.layerGroup().addTo(leafletMap);
+    [1000, 2000, 3000, 4000, 5000].forEach(function (r) {
       var c = L.circle([STATION.latDec, STATION.lonDec], {
-        radius: r, color: '#5eead4', weight: 1.8, fill: false, dashArray: '5,6', opacity: 0.8
-      }).addTo(leafletMap);
+        radius: r, color: '#5eead4', weight: 2.5, fill: false, dashArray: '6,5', opacity: 1
+      });
       bindTapTooltip(c, '水平距離の目安：' + (r / 1000).toFixed(0) + 'km（アンテナからの距離。高度とは無関係）');
+      distanceRingLayerGroup.addLayer(c);
       mapMarkers.rings.push(c);
     });
 
@@ -1207,14 +1220,14 @@
     return best;
   }
 
-  // 選択高度における「高度ドリフト円」の半径（斜めビームの水平ドリフト量 = 高度×tan14°）
+  // 選択高度における「選択高度（ビーム領域）」の半径（斜めビームの水平ドリフト量 = 高度×tan14°）
   function repRadiusFor(alt) {
     var r = alt * Math.tan(toRad(14));
     return isFinite(r) && r > 0 ? r : 0;
   }
 
   // 選択高度に最も近い実況風を地図上に回転矢印で表示し、あわせてその高度での
-  // 高度ドリフト円（4本の斜めビームが描く円錐の地表投影）を重ねる
+  // 選択高度（ビーム領域）（4本の斜めビームが描く円錐の地表投影）を重ねる
   var REF_BEARING = 45; // NE：N/E/S/Wビーム線と重ならない基準方位（矢印表示の矢印位置に使う）
 
   function updateMapWindArrow() {
@@ -1228,14 +1241,25 @@
         radius: r, color: '#ffb300', weight: 1.5, dashArray: '6,6',
         fillColor: '#ffb300', fillOpacity: 0.06, opacity: 0.75
       });
-      bindTapTooltip(circle, '高度ドリフト円：半径約' + Math.round(r) + 'm（高度' + (alt / 1000).toFixed(1) + 'km。水平距離の目安リングとは別物）');
+      bindTapTooltip(circle, '選択高度（ビーム領域）：半径約' + Math.round(r) + 'm（高度' + (alt / 1000).toFixed(1) + 'km。水平距離の目安リングとは別物）');
       windLayerGroup.addLayer(circle);
+
+      // 選択高度の値を、円に接する四角枠で常時表示する（円と同じアンバー色）。
+      // 風向矢印クラスタ（北東）やN/E/S/Wビーム線と重ならない方位（南南西）に置く。
+      var ALT_LABEL_BEARING = 200;
+      var altLabelPos = destPoint(STATION.latDec, STATION.lonDec, ALT_LABEL_BEARING, r);
+      var altLabelIcon = L.divIcon({
+        className: 'alt-label-icon',
+        html: '<div class="alt-label-frame">選択高度 ' + (alt / 1000).toFixed(1) + 'km</div>',
+        iconSize: [90, 24], iconAnchor: [45, 12]
+      });
+      windLayerGroup.addLayer(L.marker(altLabelPos, { icon: altLabelIcon, interactive: false }));
     }
 
     updateMapWindProfileRings();
   }
 
-  // 選択時刻の全高度を、高度ドリフト円の同心円上に一度に表示する（矢印表示／リング表示をトグルで切替）。
+  // 選択時刻の全高度を、選択高度（ビーム領域）の同心円上に一度に表示する（矢印表示／リング表示をトグルで切替）。
   // 「選択高度」に最も近い点は、別のアイコンにするのではなく同じアイコンを強調表示することで
   // 「中心だけ表示方法が違う」というミスリードを避ける。詳細（方位・風速・高度）はホバーで表示。
   function updateMapWindProfileRings() {
@@ -1274,13 +1298,10 @@
         bindTapTooltip(tickMarker, tooltipText);
         windLayerGroup.addLayer(tickMarker);
       } else {
-        // 矢印表示：リングは目印のみ（破線）、矢印は基準方位（北東）に固定し、向きだけ実風向に回転させる。
+        // 矢印表示：矢印は基準方位（北東）に固定し、向きだけ実風向に回転させる。
         // 常時表示は風速のみ、方位・高度はホバーで表示。
-        var ring2 = L.circle([STATION.latDec, STATION.lonDec], {
-          radius: r, color: '#8b96ac', weight: 1, dashArray: '3,4', fill: false, opacity: 0.45
-        });
-        windLayerGroup.addLayer(ring2);
-
+        // （各高度ごとの破線円は、選択高度スライダーに反応せず「固定されている」ように
+        //   見えて紛らわしく、選択高度側は既に選択高度（ビーム領域）で示せているため廃止した）
         var arrowPos = destPoint(STATION.latDec, STATION.lonDec, REF_BEARING, r);
         var arrowSize = isSelected ? 32 : 25;
         var labelHtml = isSelected ? ('<div class="ring-value-label">' + spd.toFixed(1) + 'm/s</div>') : '';
@@ -1300,7 +1321,7 @@
     });
   }
 
-  // 3Dビュー：選択高度における高度ドリフト円をアンテナ周りの水平な破線円として表示する
+  // 3Dビュー：選択高度における選択高度（ビーム領域）をアンテナ周りの水平な破線円として表示する
   var repRadiusRing3D = null;
   var repRadiusLabel = null;
 
@@ -1327,12 +1348,12 @@
 
     var el = document.createElement('div');
     el.className = 'label label-reprad';
-    el.textContent = '高度ドリフト円 ' + Math.round(r) + 'm（高度' + (alt / 1000).toFixed(1) + 'km）';
+    el.textContent = '選択高度（ビーム領域） ' + Math.round(r) + 'm（高度' + (alt / 1000).toFixed(1) + 'km）';
     labelLayerEl.appendChild(el);
     repRadiusLabel = { el: el, pos: new THREE.Vector3(r, alt, 0) };
   }
 
-  // 選択高度を設定し、関連する表示（マーカー・矢印・高度ドリフト円・スライダー）を同期する
+  // 選択高度を設定し、関連する表示（マーカー・矢印・選択高度（ビーム領域）・スライダー）を同期する
   function setMapAltitude(h) {
     h = Math.max(0, Math.min(settings.mapAltitudeMax, h));
     settings.mapAltitude = h;
@@ -2052,6 +2073,11 @@
       if (!leafletMap || !windLayerGroup) return;
       if (e.target.checked) leafletMap.addLayer(windLayerGroup);
       else leafletMap.removeLayer(windLayerGroup);
+    });
+    document.getElementById('toggleDistanceRingsMap').addEventListener('change', function (e) {
+      if (!leafletMap || !distanceRingLayerGroup) return;
+      if (e.target.checked) leafletMap.addLayer(distanceRingLayerGroup);
+      else leafletMap.removeLayer(distanceRingLayerGroup);
     });
     document.querySelectorAll('.map-wind-style-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
