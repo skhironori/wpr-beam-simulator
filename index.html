@@ -299,6 +299,7 @@
   }
   #mapOverlayControls .field-label{ color:#c8d0dd; }
   #mapOverlayControls .view-btn{ white-space:nowrap; }
+  #mapFetchControl{ display:none; }
   #mapTapTooltip{
     position:absolute; display:none; pointer-events:none; z-index:1300;
     transform:translate(-50%, -130%);
@@ -433,6 +434,15 @@
 
     #mapOverlayControls{ width:210px; padding:8px 10px; }
     #mapOverlayControls .view-btn{ padding:5px 6px; font-size:11px; }
+
+    #mapFetchControl{
+      display:block; position:absolute; top:10px; left:50%; transform:translateX(-50%);
+      z-index:1200;
+    }
+    #mapFetchControl .btn{
+      padding:7px 16px; font-size:12px; box-shadow:0 2px 8px rgba(0,0,0,0.5);
+      white-space:nowrap;
+    }
 
     .chart-header .section-title{ font-size:var(--fs-floor); }
 
@@ -622,6 +632,9 @@
         </div>
         <div id="mapPane">
           <div id="mapLeafletContainer"></div>
+          <div id="mapFetchControl">
+            <button class="btn btn-primary" id="jmaFetchBtnMobile" type="button">最新データを取得</button>
+          </div>
           <div id="mapOverlayControls">
             <div class="field-row" style="margin-bottom:8px;">
               <div class="field-label">選択高度 <span class="val" id="mapAltValue">1.0 km</span></div>
@@ -1283,9 +1296,6 @@
       var r = repRadiusFor(p.height);
       if (r <= 0) return;
       var isSelected = (p === selectedPoint);
-      // リング表示は選択高度の1本だけを描く。全高度分を常に重ねると、選択高度を
-      // 動かしても反応しないリングが「固定されている」ように見えて紛らわしいため。
-      if (settings.mapWindStyle === 'ring' && !isSelected) return;
 
       var spd = Math.sqrt(p.u * p.u + p.v * p.v);
       var dirFrom = windDirFrom(p.u, p.v);
@@ -1433,12 +1443,15 @@
       });
   }
 
-  // サイドバー最上部の取得ボタンの状態のみを扱う（数値readoutは持たない）
+  // 取得ボタン（サイドバー・スマホ版の地図上部の2箇所）の状態を同期する
   function renderJmaControls() {
-    var btn = document.getElementById('jmaFetchBtn');
-    if (!btn) return;
-    btn.disabled = !!jmaData.loading;
-    btn.textContent = jmaData.loading ? '取得中…' : '最新データを取得';
+    var label = jmaData.loading ? '取得中…' : '最新データを取得';
+    ['jmaFetchBtn', 'jmaFetchBtnMobile'].forEach(function (id) {
+      var btn = document.getElementById(id);
+      if (!btn) return;
+      btn.disabled = !!jmaData.loading;
+      btn.textContent = label;
+    });
   }
 
   // チャートパネルの状態行（取得件数・最終取得時刻・エラー）
@@ -2138,6 +2151,7 @@
     });
 
     document.getElementById('jmaFetchBtn').addEventListener('click', fetchJmaData);
+    document.getElementById('jmaFetchBtnMobile').addEventListener('click', fetchJmaData);
 
     document.getElementById('jmaChartCanvas').addEventListener('click', function (e) {
       if (!jmaChartMeta || jmaChartMeta.n === 0) return;
