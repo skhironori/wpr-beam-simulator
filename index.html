@@ -367,6 +367,17 @@
     padding:2px 7px; white-space:nowrap; text-align:center; font-variant-numeric:tabular-nums;
     box-shadow:0 0 4px rgba(255,179,0,0.4);
   }
+  .amedas-badge{
+    width:26px; height:26px; border-radius:50%; box-sizing:border-box;
+    background:rgba(74,222,128,0.28); border:2px solid var(--green);
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 0 5px rgba(74,222,128,0.5);
+  }
+  .amedas-label{
+    font-family:var(--font-numeric); font-size:var(--fs-floor); font-weight:700; color:var(--green);
+    background:rgba(10,14,26,0.88); border:1px solid var(--green); border-radius:3px;
+    padding:1px 5px; white-space:nowrap; margin-top:2px; font-variant-numeric:tabular-nums;
+  }
   .antenna-icon{
     color:var(--text); font-size:var(--fs-emphasis); line-height:1;
     text-shadow:0 0 4px #000, 0 0 4px #000; text-align:center;
@@ -501,6 +512,10 @@
         <div class="toggle-row" style="margin-bottom:8px;">
           <input type="checkbox" id="toggleDistanceRingsMap" checked>
           <label for="toggleDistanceRingsMap">水平距離の同心円（1〜5km）を表示</label>
+        </div>
+        <div class="toggle-row" style="margin-bottom:8px;">
+          <input type="checkbox" id="toggleAmedasMap" checked>
+          <label for="toggleAmedasMap">アメダス地上風（帯広〜上士幌・11地点）を表示</label>
         </div>
       </div>
 
@@ -684,6 +699,24 @@
     elevation: 38
   };
 
+  // 帯広〜上士幌間、風向風速を観測しているアメダス11地点（押帯は降水量のみのため除外）。
+  // 緯度経度は気象庁 amedastable.json（度分形式）に基づく固定値として保持する
+  // （毎回amedastable.json全体を取得して絞り込む必要はないため）。
+  // coloc: true の帯広は、WPRアンテナと同一地点（マーカー表示時にオフセットが必要）。
+  var AMEDAS_STATIONS = [
+    { code: '20432', name: '帯広',   lat: 42 + 55.3 / 60, lon: 143 + 12.7 / 60, coloc: true },
+    { code: '20421', name: '芽室',   lat: 42 + 54.0 / 60, lon: 143 + 2.6 / 60 },
+    { code: '20371', name: '駒場',   lat: 43 + 3.0 / 60,  lon: 143 + 11.0 / 60 },
+    { code: '20556', name: '糠内',   lat: 42 + 47.2 / 60, lon: 143 + 19.7 / 60 },
+    { code: '20441', name: '池田',   lat: 42 + 55.2 / 60, lon: 143 + 27.5 / 60 },
+    { code: '20551', name: '帯広泉', lat: 42 + 44.0 / 60, lon: 143 + 13.0 / 60 },
+    { code: '20361', name: '鹿追',   lat: 43 + 6.2 / 60,  lon: 142 + 59.7 / 60 },
+    { code: '20606', name: '更別',   lat: 42 + 39.1 / 60, lon: 143 + 11.7 / 60 },
+    { code: '20601', name: '上札内', lat: 42 + 38.5 / 60, lon: 143 + 5.8 / 60 },
+    { code: '20356', name: '新得',   lat: 43 + 4.6 / 60,  lon: 142 + 50.4 / 60 },
+    { code: '20266', name: '上士幌', lat: 43 + 14.5 / 60, lon: 143 + 17.7 / 60 }
+  ];
+
   // 方位角 az: 北=0, 東=90, 南=180, 西=270（時計回り, null = 鉛直）
   // 天頂角 zenith: 0=鉛直, 14=斜めビーム（住友電工 WPR-LQ7 技術資料より）
   var BEAM_DEFS = [
@@ -739,7 +772,8 @@
     blindZoneAltitude: 200,
     mapAltitude: 1000,
     mapAltitudeMax: 5000, // 「選択高度」スライダーの上限。取得データの実際の最高高度に応じて動的に更新する
-    mapWindStyle: 'fixed' // 'fixed'=矢印表示（固定方位）／ 'ring'=リング表示（彩色）
+    mapWindStyle: 'fixed', // 'fixed'=矢印表示（固定方位）／ 'ring'=リング表示（彩色）
+    showAmedas: true
   };
 
   var obstruction = null; // { height, distance, bearing, results: [{key, blocked, blockAltitude, outOfAzimuth}] }
@@ -1051,7 +1085,10 @@
   // ------------------------------------------------------------------
   var leafletMap = null;
   var mapMarkers = { antenna: null, rings: [], beams: {}, obstruction: null };
-  var beamLayerGroup, windLayerGroup, distanceRingLayerGroup;
+  var beamLayerGroup, windLayerGroup, distanceRingLayerGroup, amedasLayerGroup;
+
+  // アメダス取得データのキャッシュ：{ 地点コード: { series: [{timeMs, dirDeg, spd}], loading, error } }
+  var amedasData = {};
 
   function initMap() {
     if (leafletMap) return;
@@ -1100,6 +1137,7 @@
 
     beamLayerGroup = L.layerGroup();
     windLayerGroup = L.layerGroup().addTo(leafletMap);
+    amedasLayerGroup = L.layerGroup().addTo(leafletMap);
     var beamsToggle = document.getElementById('toggleBeamsMap');
     if (beamsToggle && beamsToggle.checked) beamLayerGroup.addTo(leafletMap);
 
@@ -1116,6 +1154,7 @@
     updateMapBeams();
     updateMapObstruction();
     updateMapWindArrow();
+    updateAmedasLayer();
   }
 
   // 地図用の共有タップツールチップ。Leaflet組み込みのper-layerツールチップ機構には
@@ -1343,6 +1382,49 @@
     });
   }
 
+  // アメダス地上風レイヤーを再描画する。WPRの風況（矢印表示／リング表示）とは
+  // 色・アイコン形状ともに明確に区別する（緑＝地表実況、という統一色にする）。
+  // 帯広地点はWPRアンテナと同一座標のため、表示上は南西へわずかにオフセットする。
+  var AMEDAS_COLOC_OFFSET_M = 220;
+  function updateAmedasLayer() {
+    if (!leafletMap || !amedasLayerGroup) return;
+    amedasLayerGroup.clearLayers();
+
+    var targetTime = jmaData.selectedTime ? parseJmaTimeUTCToDate(jmaData.selectedTime).getTime() : null;
+    if (targetTime === null) return;
+
+    AMEDAS_STATIONS.forEach(function (st) {
+      var rec = amedasData[st.code];
+      if (!rec || !rec.series.length) return;
+      var pt = nearestAmedasPoint(rec.series, targetTime, 20 * 60000); // 20分以内のものだけ採用
+      if (!pt || pt.dirDeg === null) return; // 静穏（風向なし）または近傍にデータなし
+
+      var pos = st.coloc
+        ? destPoint(st.lat, st.lon, 225, AMEDAS_COLOC_OFFSET_M)
+        : [st.lat, st.lon];
+      var dirTo = (pt.dirDeg + 180) % 360;
+      var obsStr = new Date(pt.timeMs).toLocaleString('ja-JP', {
+        timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+      });
+      var tooltipText = 'アメダス' + st.name + '　' + compassLabel16(pt.dirDeg) + '　' + pt.spd.toFixed(1) + 'm/s'
+        + '（' + obsStr + ' JST時点・地上風）';
+
+      var html =
+        '<div style="display:flex;flex-direction:column;align-items:center;">' +
+        '<div class="amedas-badge">' +
+        '<div style="transform:rotate(' + dirTo.toFixed(1) + 'deg);">' +
+        '<svg viewBox="0 0 24 24" width="16" height="16">' +
+        '<path d="M12 4 L12 19 M12 4 L7 10 M12 4 L17 10" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '</svg></div></div>' +
+        '<div class="amedas-label">' + st.name + ' ' + pt.spd.toFixed(1) + 'm/s</div></div>';
+      var icon = L.divIcon({ className: 'amedas-icon', html: html, iconSize: [70, 50], iconAnchor: [35, 14] });
+      var marker = L.marker(pos, { icon: icon, interactive: true });
+      bindTapTooltip(marker, tooltipText);
+      amedasLayerGroup.addLayer(marker);
+    });
+  }
+
+
   // 3Dビュー：選択高度における選択高度（ビーム領域）をアンテナ周りの水平な破線円として表示する
   var repRadiusRing3D = null;
   var repRadiusLabel = null;
@@ -1434,6 +1516,7 @@
         updateJmaOverlay3D();
         updateJmaOverlayMap();
         updateMapWindArrow();
+        updateAmedasLayer();
       })
       .catch(function (err) {
         jmaData.loading = false;
@@ -1442,6 +1525,96 @@
         renderJmaStatus();
       });
   }
+
+  // ------------------------------------------------------------------
+  // アメダス地上風（帯広〜上士幌間・押帯を除く11地点）の取得・表示
+  // 出典：気象庁 https://www.jma.go.jp/bosai/amedas/ （公共データ利用規約に基づく）
+  // WPRの取得を待たせないよう、常にWPR取得とは非同期・並行に走らせる（呼び出し側で
+  // await/thenの直列化をしないこと）。個々の地点の失敗は他地点やWPR表示に影響させない
+  // ため Promise.allSettled を使う。
+  // ------------------------------------------------------------------
+  var AMEDAS_LOOKBACK_BLOCKS = 1; // 直近1ブロック（最大3時間分）。表示が遅い場合はここを見直す
+
+  // 現在時刻からJSTでの3時間区切りブロックファイル名（YYYYMMDD_HH）を作る。
+  // blocksBack=0が現在を含むブロック、1が1つ前（3時間前）のブロック。
+  function amedasBlockFileName(blocksBack) {
+    var jst = new Date(Date.now() + 9 * 3600000); // UTC+9=JST相当のUTC表現に変換（文字列パース不要の安全な方法）
+    var y = jst.getUTCFullYear(), mo = jst.getUTCMonth(), d = jst.getUTCDate();
+    var h = jst.getUTCHours();
+    var blockStartHour = Math.floor(h / 3) * 3 - blocksBack * 3;
+    var blockDate = new Date(Date.UTC(y, mo, d, blockStartHour)); // 負の時刻は前日側へ自動繰り下げされる
+    var pad2 = function (n) { return (n < 10 ? '0' : '') + n; };
+    return blockDate.getUTCFullYear() + pad2(blockDate.getUTCMonth() + 1) + pad2(blockDate.getUTCDate())
+      + '_' + pad2(blockDate.getUTCHours());
+  }
+
+  // アメダスのJSONキー（YYYYMMDDHHMMSS、JST）→ UTCエポックms
+  function parseAmedasKeyToUTCms(key) {
+    var y = +key.slice(0, 4), mo = +key.slice(4, 6) - 1, d = +key.slice(6, 8);
+    var h = +key.slice(8, 10), mi = +key.slice(10, 12), s = +key.slice(12, 14);
+    return Date.UTC(y, mo, d, h, mi, s) - 9 * 3600000;
+  }
+
+  // アメダス風向コード（0=静穏、1〜16=16方位）→ 度（気象学的な「吹いてくる方向」）
+  function windDirCodeToDeg(code) {
+    if (code === null || code === undefined || code === 0) return null;
+    return (code - 1) * 22.5;
+  }
+
+  function fetchAmedasData() {
+    var blockFiles = [];
+    for (var i = 0; i < AMEDAS_LOOKBACK_BLOCKS; i++) blockFiles.push(amedasBlockFileName(i));
+
+    var tasks = AMEDAS_STATIONS.map(function (st) {
+      var urls = blockFiles.map(function (b) {
+        return 'https://www.jma.go.jp/bosai/amedas/data/point/' + st.code + '/' + b + '.json';
+      });
+      return Promise.all(urls.map(function (u) {
+        return fetch(u, { cache: 'no-store' }).then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.json();
+        });
+      })).then(function (jsons) {
+        var series = [];
+        jsons.forEach(function (byTime) {
+          Object.keys(byTime).forEach(function (k) {
+            var rec = byTime[k];
+            var windArr = rec.wind, dirArr = rec.windDirection;
+            // 品質フラグ0（正常）かつ欠測でないものだけを採用する
+            if (!windArr || windArr[0] === null || windArr[1] !== 0) return;
+            if (!dirArr || dirArr[0] === null || dirArr[1] !== 0) return;
+            series.push({
+              timeMs: parseAmedasKeyToUTCms(k),
+              spd: windArr[0],
+              dirDeg: windDirCodeToDeg(dirArr[0])
+            });
+          });
+        });
+        series.sort(function (a, b) { return a.timeMs - b.timeMs; });
+        amedasData[st.code] = { series: series, error: null };
+      }).catch(function (err) {
+        amedasData[st.code] = {
+          series: (amedasData[st.code] && amedasData[st.code].series) || [],
+          error: (err && err.message) ? err.message : String(err)
+        };
+      });
+    });
+
+    Promise.allSettled(tasks).then(function () {
+      updateAmedasLayer();
+    });
+  }
+
+  // WPRの選択時刻（time文字列）に最も近いアメダス観測値を探す。許容誤差を超えたらnull。
+  function nearestAmedasPoint(series, targetMs, toleranceMs) {
+    var best = null, bestDiff = toleranceMs;
+    series.forEach(function (p) {
+      var diff = Math.abs(p.timeMs - targetMs);
+      if (diff <= bestDiff) { bestDiff = diff; best = p; }
+    });
+    return best;
+  }
+
 
   // 取得ボタン（サイドバー・スマホ版の地図上部の2箇所）の状態を同期する
   function renderJmaControls() {
@@ -1491,6 +1664,7 @@
     populateJmaTimeSelect();
     updateJmaOverlayMap();
     updateMapWindArrow();
+    updateAmedasLayer();
     updateJmaOverlay3D();
   }
 
@@ -2104,6 +2278,11 @@
       if (e.target.checked) leafletMap.addLayer(distanceRingLayerGroup);
       else leafletMap.removeLayer(distanceRingLayerGroup);
     });
+    document.getElementById('toggleAmedasMap').addEventListener('change', function (e) {
+      if (!leafletMap || !amedasLayerGroup) return;
+      if (e.target.checked) leafletMap.addLayer(amedasLayerGroup);
+      else leafletMap.removeLayer(amedasLayerGroup);
+    });
     document.querySelectorAll('.map-wind-style-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
         document.querySelectorAll('.map-wind-style-btn').forEach(function (b) { b.setAttribute('aria-pressed', 'false'); });
@@ -2277,7 +2456,9 @@
     setTimeout(function () { renderJmaChart(); }, 0);
 
     fetchJmaData();
+    fetchAmedasData(); // WPR取得とは独立・並行に走らせる（互いを待たない）
     setInterval(fetchJmaData, 10 * 60 * 1000);
+    setInterval(fetchAmedasData, 10 * 60 * 1000);
   }
 
   window.addEventListener('DOMContentLoaded', boot);
