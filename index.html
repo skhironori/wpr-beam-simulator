@@ -292,13 +292,28 @@
   #mapOverlayControls{
     position:absolute; left:50%; bottom:10px; transform:translateX(-50%);
     z-index:1200; pointer-events:auto;
-    width:240px; max-width:calc(100vw - 24px);
+    width:320px; max-width:calc(100vw - 24px);
     background:rgba(13,21,38,0.92); border:1px solid var(--panel-border); border-radius:8px;
     padding:10px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.5);
     box-sizing:border-box;
   }
   #mapOverlayControls .field-label{ color:#c8d0dd; }
   #mapOverlayControls .view-btn{ white-space:nowrap; }
+  #mapAltSlider{
+    height:28px; /* タップ領域を広げる */
+  }
+  #mapAltSlider::-webkit-slider-runnable-track{ height:8px; border-radius:4px; }
+  #mapAltSlider::-webkit-slider-thumb{
+    -webkit-appearance:none; appearance:none;
+    width:26px; height:26px; border-radius:50%; margin-top:-9px;
+    background:var(--amber); border:2px solid #0a0e1a;
+    box-shadow:0 0 5px rgba(255,179,0,0.7);
+  }
+  #mapAltSlider::-moz-range-track{ height:8px; border-radius:4px; background:#0d1526; }
+  #mapAltSlider::-moz-range-thumb{
+    width:26px; height:26px; border-radius:50%; border:2px solid #0a0e1a;
+    background:var(--amber); box-shadow:0 0 5px rgba(255,179,0,0.7);
+  }
   #mapFetchControl{ display:none; }
   #mapTapTooltip{
     position:absolute; display:none; pointer-events:none; z-index:1300;
@@ -443,7 +458,7 @@
     #leftColumn{ display:none; width:auto; min-width:0; border-right:none; }
     #leftColumn.mobile-active{ display:flex; flex-direction:column; flex:1; min-height:0; }
 
-    #mapOverlayControls{ width:210px; padding:8px 10px; }
+    #mapOverlayControls{ width:270px; padding:8px 10px; }
     #mapOverlayControls .view-btn{ padding:5px 6px; font-size:11px; }
 
     #mapFetchControl{
@@ -1323,6 +1338,25 @@
     updateMapWindProfileRings();
   }
 
+  // WPR矢印表示と同じ見た目（ハロー＋矢印＋常時ラベル）でマーカーを1つ描画する共通処理。
+  // 通常の高度別矢印と、帯広アメダス（地上＝半径0の点）の両方から呼ばれる。
+  function drawWprStyleArrowMarker(pos, dirTo, spd, col, isSelected, tooltipText) {
+    var arrowSize = isSelected ? 32 : 25;
+    var labelHtml = isSelected ? ('<div class="ring-value-label">' + spd.toFixed(1) + 'm/s</div>') : '';
+    var arrowHtml =
+      '<div style="display:flex;flex-direction:column;align-items:center;">' +
+      '<div class="ring-arrow-halo' + (isSelected ? ' selected' : '') + '">' +
+      '<div style="transform:rotate(' + dirTo.toFixed(1) + 'deg);">' +
+      '<svg viewBox="0 0 24 24" width="' + arrowSize + '" height="' + arrowSize + '">' +
+      '<path d="M12 3 L12 20 M12 3 L6.5 9.5 M12 3 L17.5 9.5" stroke="#0a0e1a" stroke-width="4.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '<path d="M12 3 L12 20 M12 3 L6.5 9.5 M12 3 L17.5 9.5" stroke="' + col + '" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
+      '</svg></div></div>' + labelHtml + '</div>';
+    var arrowIcon = L.divIcon({ className: 'ring-arrow-icon', html: arrowHtml, iconSize: [70, 66], iconAnchor: [35, 20] });
+    var arrowMarker = L.marker(pos, { icon: arrowIcon, interactive: true });
+    bindTapTooltip(arrowMarker, tooltipText);
+    windLayerGroup.addLayer(arrowMarker);
+  }
+
   // 選択時刻の全高度を、選択高度（ビーム領域）の同心円上に一度に表示する（矢印表示／リング表示をトグルで切替）。
   // 「選択高度」に最も近い点は、別のアイコンにするのではなく同じアイコンを強調表示することで
   // 「中心だけ表示方法が違う」というミスリードを避ける。詳細（方位・風速・高度）はホバーで表示。
@@ -1364,31 +1398,33 @@
         // （各高度ごとの破線円は、選択高度スライダーに反応せず「固定されている」ように
         //   見えて紛らわしく、選択高度側は既に選択高度（ビーム領域）で示せているため廃止した）
         var arrowPos = destPoint(STATION.latDec, STATION.lonDec, REF_BEARING, r);
-        var arrowSize = isSelected ? 32 : 25;
-        var labelHtml = isSelected ? ('<div class="ring-value-label">' + spd.toFixed(1) + 'm/s</div>') : '';
-        var arrowHtml =
-          '<div style="display:flex;flex-direction:column;align-items:center;">' +
-          '<div class="ring-arrow-halo' + (isSelected ? ' selected' : '') + '">' +
-          '<div style="transform:rotate(' + dirTo.toFixed(1) + 'deg);">' +
-          '<svg viewBox="0 0 24 24" width="' + arrowSize + '" height="' + arrowSize + '">' +
-          '<path d="M12 3 L12 20 M12 3 L6.5 9.5 M12 3 L17.5 9.5" stroke="#0a0e1a" stroke-width="4.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
-          '<path d="M12 3 L12 20 M12 3 L6.5 9.5 M12 3 L17.5 9.5" stroke="' + col + '" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
-          '</svg></div></div>' + labelHtml + '</div>';
-        var arrowIcon = L.divIcon({ className: 'ring-arrow-icon', html: arrowHtml, iconSize: [70, 66], iconAnchor: [35, 20] });
-        var arrowMarker = L.marker(arrowPos, { icon: arrowIcon, interactive: true });
-        bindTapTooltip(arrowMarker, tooltipText);
-        windLayerGroup.addLayer(arrowMarker);
+        drawWprStyleArrowMarker(arrowPos, dirTo, spd, col, isSelected, tooltipText);
       }
     });
+
+    // 帯広アメダス（＝WPRアンテナ直上の地上観測）は、WPRの矢印表示と同じ見た目に統一して
+    // アンテナ位置へそのまま重ねる。リング表示中でも半径0の点は意味を持たないため、
+    // 表示方式の設定に関わらずこのアイコンで表示する。
+    var obihiroAmedas = amedasData['20432'];
+    if (obihiroAmedas && obihiroAmedas.series.length && jmaData.selectedTime) {
+      var targetMs = parseJmaTimeUTCToDate(jmaData.selectedTime).getTime();
+      var groundPt = nearestAmedasPoint(obihiroAmedas.series, targetMs, 20 * 60000);
+      if (groundPt && groundPt.dirDeg !== null) {
+        var gDirTo = (groundPt.dirDeg + 180) % 360;
+        var gCol = jmaSpeedColor(groundPt.spd);
+        var gObsStr = new Date(groundPt.timeMs).toLocaleString('ja-JP', {
+          timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+        });
+        var gTooltip = compassLabel16(groundPt.dirDeg) + '　' + groundPt.spd.toFixed(1) + 'm/s／地上（アメダス帯広・' + gObsStr + ' JST）';
+        drawWprStyleArrowMarker([STATION.latDec, STATION.lonDec], gDirTo, groundPt.spd, gCol, true, gTooltip);
+      }
+    }
   }
 
   // アメダス地上風レイヤーを再描画する。WPRの風況（矢印表示／リング表示）とは
   // 色・アイコン形状ともに明確に区別する（緑＝地表実況、という統一色にする）。
-  // 帯広地点はWPRアンテナと同一座標のため、表示上は南西へわずかにオフセットする。
-  // WNW（300°）：矢印表示クラスタ(45°)からも選択高度ラベル(200°)からも十分離れた方位。
-  // 距離も220m→320mに広げ、低高度（=選択高度の円が小さい）時でも重ならないようにする。
-  var AMEDAS_COLOC_OFFSET_M = 320;
-  var AMEDAS_COLOC_BEARING = 300;
+  // 帯広地点はWPRアンテナと同一座標のため、この緑バッジではなく
+  // updateMapWindProfileRings側でWPR矢印表示と同じ見た目に統一して描画する。
   function updateAmedasLayer() {
     if (!leafletMap || !amedasLayerGroup) return;
     amedasLayerGroup.clearLayers();
@@ -1397,14 +1433,13 @@
     if (targetTime === null) return;
 
     AMEDAS_STATIONS.forEach(function (st) {
+      if (st.coloc) return; // 帯広はWPR矢印表示と統一した見た目でupdateMapWindProfileRings側から描画する
       var rec = amedasData[st.code];
       if (!rec || !rec.series.length) return;
       var pt = nearestAmedasPoint(rec.series, targetTime, 20 * 60000); // 20分以内のものだけ採用
       if (!pt || pt.dirDeg === null) return; // 静穏（風向なし）または近傍にデータなし
 
-      var pos = st.coloc
-        ? destPoint(st.lat, st.lon, AMEDAS_COLOC_BEARING, AMEDAS_COLOC_OFFSET_M)
-        : [st.lat, st.lon];
+      var pos = [st.lat, st.lon];
       var dirTo = (pt.dirDeg + 180) % 360;
       var obsStr = new Date(pt.timeMs).toLocaleString('ja-JP', {
         timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
@@ -1605,6 +1640,7 @@
 
     Promise.allSettled(tasks).then(function () {
       updateAmedasLayer();
+      updateMapWindArrow(); // 帯広アメダス（WPRと統一表示）の反映。windLayerGroupを再クリアして描き直す
     });
   }
 
