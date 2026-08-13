@@ -1383,17 +1383,21 @@
       var tooltipText = compassLabel16(dirFrom) + '　' + spd.toFixed(1) + 'm/s／高度' + Math.round(p.height) + 'm';
 
       if (settings.mapWindStyle === 'ring') {
-        // リング表示：リングを風速で彩色し、実方位に太めのティックを置く（詳細はホバー）
+        // リング表示：リングを風速で彩色し、実方位に太めのティックを置く。
+        // 選択高度の点だけは、矢印表示と同様に風速を常時表示する（詳細はホバー）。
         var ring = L.circle([STATION.latDec, STATION.lonDec], {
           radius: r, color: col, weight: isSelected ? 9 : 7, fill: false, opacity: isSelected ? 0.9 : 0.6
         });
         windLayerGroup.addLayer(ring);
 
         var tickPos = destPoint(STATION.latDec, STATION.lonDec, dirTo, r);
+        var tickLabelHtml = isSelected ? ('<div class="ring-value-label">' + spd.toFixed(1) + 'm/s</div>') : '';
         var tickIcon = L.divIcon({
           className: 'ring-tick-icon',
-          html: '<div class="ring-tick-mark' + (isSelected ? ' selected' : '') + '"></div>',
-          iconSize: [16, 16], iconAnchor: [8, 8]
+          html: '<div style="display:flex;flex-direction:column;align-items:center;">' +
+            '<div class="ring-tick-mark' + (isSelected ? ' selected' : '') + '"></div>' +
+            tickLabelHtml + '</div>',
+          iconSize: [70, 40], iconAnchor: [35, 8]
         });
         var tickMarker = L.marker(tickPos, { icon: tickIcon, interactive: true });
         bindTapTooltip(tickMarker, tooltipText);
@@ -1425,7 +1429,8 @@
             timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
           });
           var gTooltip = compassLabel16(groundPt.dirDeg) + '　' + groundPt.spd.toFixed(1) + 'm/s／地上（アメダス帯広・' + gObsStr + ' JST）';
-          drawWprStyleArrowMarker([STATION.latDec, STATION.lonDec], gDirTo, groundPt.spd, gCol, true, gTooltip);
+          var gIsSelected = (settings.mapAltitude === 0);
+          drawWprStyleArrowMarker([STATION.latDec, STATION.lonDec], gDirTo, groundPt.spd, gCol, gIsSelected, gTooltip);
         }
       }
     } catch (err) {
