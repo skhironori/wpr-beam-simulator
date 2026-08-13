@@ -1385,7 +1385,10 @@
   // アメダス地上風レイヤーを再描画する。WPRの風況（矢印表示／リング表示）とは
   // 色・アイコン形状ともに明確に区別する（緑＝地表実況、という統一色にする）。
   // 帯広地点はWPRアンテナと同一座標のため、表示上は南西へわずかにオフセットする。
-  var AMEDAS_COLOC_OFFSET_M = 220;
+  // WNW（300°）：矢印表示クラスタ(45°)からも選択高度ラベル(200°)からも十分離れた方位。
+  // 距離も220m→320mに広げ、低高度（=選択高度の円が小さい）時でも重ならないようにする。
+  var AMEDAS_COLOC_OFFSET_M = 320;
+  var AMEDAS_COLOC_BEARING = 300;
   function updateAmedasLayer() {
     if (!leafletMap || !amedasLayerGroup) return;
     amedasLayerGroup.clearLayers();
@@ -1400,7 +1403,7 @@
       if (!pt || pt.dirDeg === null) return; // 静穏（風向なし）または近傍にデータなし
 
       var pos = st.coloc
-        ? destPoint(st.lat, st.lon, 225, AMEDAS_COLOC_OFFSET_M)
+        ? destPoint(st.lat, st.lon, AMEDAS_COLOC_BEARING, AMEDAS_COLOC_OFFSET_M)
         : [st.lat, st.lon];
       var dirTo = (pt.dirDeg + 180) % 360;
       var obsStr = new Date(pt.timeMs).toLocaleString('ja-JP', {
