@@ -1369,7 +1369,8 @@
   function updateMapWindProfileRings() {
     if (!leafletMap || !windLayerGroup) return;
     var profile = currentProfile();
-    var selectedPoint = nearestProfilePoint(settings.mapAltitude);
+    // 高度0.00kmは帯広アメダス側の強調に譲る（WPR側とアメダス側が同時に強調されるのを防ぐ）
+    var selectedPoint = (settings.mapAltitude === 0) ? null : nearestProfilePoint(settings.mapAltitude);
 
     profile.forEach(function (p) {
       var r = repRadiusFor(p.height);
