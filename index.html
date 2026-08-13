@@ -1313,29 +1313,35 @@
     if (!leafletMap || !windLayerGroup) return;
     windLayerGroup.clearLayers();
 
-    var alt = settings.mapAltitude;
-    if (alt > 0) {
-      var r = repRadiusFor(alt);
-      var circle = L.circle([STATION.latDec, STATION.lonDec], {
-        radius: r, color: '#ffb300', weight: 1.5, dashArray: '6,6',
-        fillColor: '#ffb300', fillOpacity: 0.06, opacity: 0.75
-      });
-      bindTapTooltip(circle, '選択高度（ビーム領域）：半径約' + Math.round(r) + 'm（高度' + (alt / 1000).toFixed(1) + 'km。水平距離の目安リングとは別物）');
-      windLayerGroup.addLayer(circle);
+    try {
+      var alt = settings.mapAltitude;
+      if (alt > 0) {
+        var r = repRadiusFor(alt);
+        var circle = L.circle([STATION.latDec, STATION.lonDec], {
+          radius: r, color: '#ffb300', weight: 1.5, dashArray: '6,6',
+          fillColor: '#ffb300', fillOpacity: 0.06, opacity: 0.75
+        });
+        bindTapTooltip(circle, '選択高度（ビーム領域）：半径約' + Math.round(r) + 'm（高度' + (alt / 1000).toFixed(1) + 'km。水平距離の目安リングとは別物）');
+        windLayerGroup.addLayer(circle);
 
-      // 選択高度の値を、円に接する四角枠で常時表示する（円と同じアンバー色）。
-      // 風向矢印クラスタ（北東）やN/E/S/Wビーム線と重ならない方位（南南西）に置く。
-      var ALT_LABEL_BEARING = 200;
-      var altLabelPos = destPoint(STATION.latDec, STATION.lonDec, ALT_LABEL_BEARING, r);
-      var altLabelIcon = L.divIcon({
-        className: 'alt-label-icon',
-        html: '<div class="alt-label-frame">選択高度 ' + (alt / 1000).toFixed(1) + 'km</div>',
-        iconSize: [90, 24], iconAnchor: [45, 12]
-      });
-      windLayerGroup.addLayer(L.marker(altLabelPos, { icon: altLabelIcon, interactive: false }));
+        // 選択高度の値を、円に接する四角枠で常時表示する（円と同じアンバー色）。
+        // 風向矢印クラスタ（北東）やN/E/S/Wビーム線と重ならない方位（南南西）に置く。
+        var ALT_LABEL_BEARING = 200;
+        var altLabelPos = destPoint(STATION.latDec, STATION.lonDec, ALT_LABEL_BEARING, r);
+        var altLabelIcon = L.divIcon({
+          className: 'alt-label-icon',
+          html: '<div class="alt-label-frame">選択高度 ' + (alt / 1000).toFixed(1) + 'km</div>',
+          iconSize: [90, 24], iconAnchor: [45, 12]
+        });
+        windLayerGroup.addLayer(L.marker(altLabelPos, { icon: altLabelIcon, interactive: false }));
+      }
+
+      updateMapWindProfileRings();
+    } catch (err) {
+      // ここでの例外が、呼び出し元（アメダス描画などが後続する箇所）を
+      // 巻き添えで止めてしまわないようにする。
+      console.error('updateMapWindArrow内でエラー:', err);
     }
-
-    updateMapWindProfileRings();
   }
 
   // WPR矢印表示と同じ見た目（ハロー＋矢印＋常時ラベル）でマーカーを1つ描画する共通処理。
@@ -1405,19 +1411,25 @@
     // 帯広アメダス（＝WPRアンテナ直上の地上観測）は、WPRの矢印表示と同じ見た目に統一して
     // アンテナ位置へそのまま重ねる。リング表示中でも半径0の点は意味を持たないため、
     // 表示方式の設定に関わらずこのアイコンで表示する。
-    var obihiroAmedas = amedasData['20432'];
-    if (obihiroAmedas && obihiroAmedas.series.length && jmaData.selectedTime) {
-      var targetMs = parseJmaTimeUTCToDate(jmaData.selectedTime).getTime();
-      var groundPt = nearestAmedasPoint(obihiroAmedas.series, targetMs, 20 * 60000);
-      if (groundPt && groundPt.dirDeg !== null) {
-        var gDirTo = (groundPt.dirDeg + 180) % 360;
-        var gCol = jmaSpeedColor(groundPt.spd);
-        var gObsStr = new Date(groundPt.timeMs).toLocaleString('ja-JP', {
-          timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
-        });
-        var gTooltip = compassLabel16(groundPt.dirDeg) + '　' + groundPt.spd.toFixed(1) + 'm/s／地上（アメダス帯広・' + gObsStr + ' JST）';
-        drawWprStyleArrowMarker([STATION.latDec, STATION.lonDec], gDirTo, groundPt.spd, gCol, true, gTooltip);
+    // try/catchで囲むのは、ここでの想定外の例外が、この関数より後（呼び出し元）の
+    // 処理を巻き添えで止めてしまわないようにするため（他のアメダス地点の描画等）。
+    try {
+      var obihiroAmedas = amedasData['20432'];
+      if (obihiroAmedas && obihiroAmedas.series && obihiroAmedas.series.length && jmaData.selectedTime) {
+        var targetMs = parseJmaTimeUTCToDate(jmaData.selectedTime).getTime();
+        var groundPt = nearestAmedasPoint(obihiroAmedas.series, targetMs, 20 * 60000);
+        if (groundPt && groundPt.dirDeg !== null) {
+          var gDirTo = (groundPt.dirDeg + 180) % 360;
+          var gCol = jmaSpeedColor(groundPt.spd);
+          var gObsStr = new Date(groundPt.timeMs).toLocaleString('ja-JP', {
+            timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+          });
+          var gTooltip = compassLabel16(groundPt.dirDeg) + '　' + groundPt.spd.toFixed(1) + 'm/s／地上（アメダス帯広・' + gObsStr + ' JST）';
+          drawWprStyleArrowMarker([STATION.latDec, STATION.lonDec], gDirTo, groundPt.spd, gCol, true, gTooltip);
+        }
       }
+    } catch (err) {
+      console.error('帯広アメダスの描画に失敗:', err);
     }
   }
 
@@ -1429,37 +1441,41 @@
     if (!leafletMap || !amedasLayerGroup) return;
     amedasLayerGroup.clearLayers();
 
-    var targetTime = jmaData.selectedTime ? parseJmaTimeUTCToDate(jmaData.selectedTime).getTime() : null;
-    if (targetTime === null) return;
+    try {
+      var targetTime = jmaData.selectedTime ? parseJmaTimeUTCToDate(jmaData.selectedTime).getTime() : null;
+      if (targetTime === null) return;
 
-    AMEDAS_STATIONS.forEach(function (st) {
-      if (st.coloc) return; // 帯広はWPR矢印表示と統一した見た目でupdateMapWindProfileRings側から描画する
-      var rec = amedasData[st.code];
-      if (!rec || !rec.series.length) return;
-      var pt = nearestAmedasPoint(rec.series, targetTime, 20 * 60000); // 20分以内のものだけ採用
-      if (!pt || pt.dirDeg === null) return; // 静穏（風向なし）または近傍にデータなし
+      AMEDAS_STATIONS.forEach(function (st) {
+        if (st.coloc) return; // 帯広はWPR矢印表示と統一した見た目でupdateMapWindProfileRings側から描画する
+        var rec = amedasData[st.code];
+        if (!rec || !rec.series || !rec.series.length) return;
+        var pt = nearestAmedasPoint(rec.series, targetTime, 20 * 60000); // 20分以内のものだけ採用
+        if (!pt || pt.dirDeg === null) return; // 静穏（風向なし）または近傍にデータなし
 
-      var pos = [st.lat, st.lon];
-      var dirTo = (pt.dirDeg + 180) % 360;
-      var obsStr = new Date(pt.timeMs).toLocaleString('ja-JP', {
-        timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+        var pos = [st.lat, st.lon];
+        var dirTo = (pt.dirDeg + 180) % 360;
+        var obsStr = new Date(pt.timeMs).toLocaleString('ja-JP', {
+          timeZone: 'Asia/Tokyo', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+        });
+        var tooltipText = 'アメダス' + st.name + '　' + compassLabel16(pt.dirDeg) + '　' + pt.spd.toFixed(1) + 'm/s'
+          + '（' + obsStr + ' JST時点・地上風）';
+
+        var html =
+          '<div style="display:flex;flex-direction:column;align-items:center;">' +
+          '<div class="amedas-badge">' +
+          '<div style="transform:rotate(' + dirTo.toFixed(1) + 'deg);">' +
+          '<svg viewBox="0 0 24 24" width="16" height="16">' +
+          '<path d="M12 4 L12 19 M12 4 L7 10 M12 4 L17 10" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
+          '</svg></div></div>' +
+          '<div class="amedas-label">' + st.name + ' ' + pt.spd.toFixed(1) + 'm/s</div></div>';
+        var icon = L.divIcon({ className: 'amedas-icon', html: html, iconSize: [70, 50], iconAnchor: [35, 14] });
+        var marker = L.marker(pos, { icon: icon, interactive: true });
+        bindTapTooltip(marker, tooltipText);
+        amedasLayerGroup.addLayer(marker);
       });
-      var tooltipText = 'アメダス' + st.name + '　' + compassLabel16(pt.dirDeg) + '　' + pt.spd.toFixed(1) + 'm/s'
-        + '（' + obsStr + ' JST時点・地上風）';
-
-      var html =
-        '<div style="display:flex;flex-direction:column;align-items:center;">' +
-        '<div class="amedas-badge">' +
-        '<div style="transform:rotate(' + dirTo.toFixed(1) + 'deg);">' +
-        '<svg viewBox="0 0 24 24" width="16" height="16">' +
-        '<path d="M12 4 L12 19 M12 4 L7 10 M12 4 L17 10" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>' +
-        '</svg></div></div>' +
-        '<div class="amedas-label">' + st.name + ' ' + pt.spd.toFixed(1) + 'm/s</div></div>';
-      var icon = L.divIcon({ className: 'amedas-icon', html: html, iconSize: [70, 50], iconAnchor: [35, 14] });
-      var marker = L.marker(pos, { icon: icon, interactive: true });
-      bindTapTooltip(marker, tooltipText);
-      amedasLayerGroup.addLayer(marker);
-    });
+    } catch (err) {
+      console.error('updateAmedasLayer内でエラー:', err);
+    }
   }
 
 
